@@ -1,0 +1,24 @@
+{
+  "name": "hls-parser",
+  "version": "0.0.0",
+  "description": "Parses HLS manifests into a JSON structure.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jamie Stackhouse",
+  "license": "MIT",
+  "dependencies": {
+    "benchmark": "^2.1.4"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.8.3",
+    "@babel/core": "^7.8.3",
+    "@babel/plugin-proposal-class-properties": "^7.8.3",
+    "@babel/preset-env": "^7.8.3",
+    "@babel/preset-typescript": "^7.8.3",
+    "@types/jest": "^24.9.1",
+    "jest": "^25.1.0",
+    "typescript": "^3.7.5"
+  }
+}
