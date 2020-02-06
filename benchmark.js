@@ -58,18 +58,17 @@ suite
       level.url = result[2]
       level.bitrate = attrs.decimalInteger('AVERAGE-BANDWIDTH') || attrs.decimalInteger('BANDWIDTH');
       level.name = attrs.NAME;
-      setCodecs([].concat((attrs.CODECS || '').split(/[ ,]+/)), level);
       
       levels.push(level);
     }
 })
 .on('start', (event) => {
-    if (event.target.name === "Lexer") {
+    if (event.target.name === "Lexer - Master") {
         console.profile("lexer-profile")
     }
 })
 .on('cycle', (event) => {
-    if (event.target.name === "Lexer") {
+    if (event.target.name === "Lexer - Master") {
         console.profileEnd("lexer-profile")
     }
     console.log(String(event.target))

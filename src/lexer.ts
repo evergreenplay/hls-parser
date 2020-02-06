@@ -226,11 +226,15 @@ export class Lexer {
 
     private processAttrList(): Record<string, string> {        
         const attributes = {}
-        for (; this.pos < this.buflen; this.pos++) {
+        const buflen = this.buflen;
+        let pos = this.pos;
+        let c;
+        
+        for (; pos < buflen; this.pos++) {
             const pair = this.processAttributePair()
+            pos = this.pos;
             attributes[pair[0]] = pair[1];
-            
-            let c = this.buf[this.pos]
+            c = this.buf[pos]
             // skip ','
             if (c === ',') {
                 continue
@@ -247,26 +251,20 @@ export class Lexer {
     private processAttributePair(): AttributeTuple {
         let pos = this.pos
         let c = this.buf[this.pos]
-        while ((this.isUpperAlpha(c) || c === '-') && c !== '=') {
-            this.pos++
-            c = this.buf[this.pos]
-        }
-        const name = this.buf.slice(pos, this.pos)
-        this.pos++ // skip '='
-        
-        pos = this.pos
-        // console.log(`processAttributePair - name: ${name}`);
-        
+        let endOfName = this.buf.indexOf('=', pos)
+
+        // TODO: check that name only contains upper alphas and '-'
+        const name = this.buf.slice(pos, endOfName)
+        pos = this.pos = endOfName + 1 // skip '='
+
         let value;
         c = this.buf[this.pos];
         // quoted-string handling
         if (c === '"') {
-            this.pos++
-            while (this.buf[this.pos] !== '"') {
-                this.pos++
-            }
-            value = this.buf.slice(pos + 1, this.pos); // skip quote
             this.pos++ // skip quote
+            let endOfQuote = this.buf.indexOf('"', this.pos)
+            value = this.buf.slice(this.pos, endOfQuote);
+            this.pos = endOfQuote + 1 // skip quote
         } else {
             while (c !== ',' && !this.isWhitespace(c)) {
                 this.pos++
