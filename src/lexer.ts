@@ -1,20 +1,16 @@
 interface Token {
     name: string;
     pos: number;
-    type: 'Tag' | 'URI' | 'TagAttributeList';
+    type: 'Tag' | 'URI' | 'TagWithAttributeList';
 }
 
 interface TagWithAttributes extends Token {
-    type: 'TagAttributeList';
-    attributes: AttributeList;
+    type: 'TagWithAttributeList';
+    attributes: AttributeMap;
 }
 
-interface Attribute {
-    name: string; 
-    value: string;
-}
-
-type AttributeList = Attribute[]
+type AttributeTuple = [string, string]
+type AttributeMap = Record<string, string>
 
 class ParsingError extends Error {
     public name = "ParsingError"
@@ -65,50 +61,25 @@ export class Lexer {
         }
     }
 
-    private isNewline = (): boolean => {
-        const c = this.buf[this.pos]
+    private isNewline = (c: string): boolean => {
         return c === '\r' || c === '\n'
     }
 
-    private isDigit = (): boolean => {
-        const c = this.buf[this.pos]
+    private isDigit = (c: string): boolean => {
         return c >= '0' || c <= '9'
     }
 
-    private isHexDigit = (): boolean => {
-        const c = this.buf[this.pos]
-        return this.isDigit() || 
-            (c >= 'A' && c <= 'F')
-    }
-
-    private isUpperAlpha = (): boolean => {
-        const c = this.buf[this.pos]
+    private isUpperAlpha = (c: string): boolean => {
         return c >= 'A' || c <= 'Z'
     }
 
-    private isAlpha = (): boolean => {
-        const c = this.buf[this.pos]
+    private isAlpha = (c: string): boolean => {
         return (c >= 'a' && c <= 'z') ||
             (c >= 'A' && c <= 'Z')
     }
 
-    // this is a poor but quick way of doing this
-    private isUriChar = (): boolean => {
-        const c = this.buf[this.pos]
-        return !this.isWhitespace()
-    }
-
-    private isWhitespace = (): boolean => {
-        const c = this.buf[this.pos]
-        switch (c) {
-            case '\t':
-            case ' ':
-            case '\r':
-            case '\n':
-                return true
-            default:
-                return false
-        }
+    private isWhitespace = (c: string): boolean => {
+        return (c === ' ' || c === '\n' || c === '\t' || c === '\r')
     }
 
     private isBOM = (): boolean => {
@@ -129,14 +100,14 @@ export class Lexer {
         return false
     }
 
-    private isHash = (): boolean => {
-        return this.buf[this.pos] === '#'
+    private isHash = (c: string): boolean => {
+        return c === '#'
     }
 
-    private isValidLineStart = (): boolean => {
-        if (this.isHash() || 
-            this.isNewline() ||
-            this.isAlpha() || this.isDigit()) {
+    private isValidLineStart = (c: string): boolean => {
+        if (this.isHash(c) || 
+            this.isNewline(c) ||
+            this.isAlpha(c) || this.isDigit(c)) {
             return true
         }
         return false
@@ -144,13 +115,16 @@ export class Lexer {
 
     private advancePos = () => {
         while (this.pos <= this.buflen) {
-            if (this.isNewline()) {
+            let c = this.buf[this.pos]
+            if (this.isNewline(c)) {
                 this.pos++
-                if (this.isNewline()) {
+                c = this.buf[this.pos]
+                if (this.isNewline(c)) {
                     this.pos++
+                    c = this.buf[this.pos]
                 }
                 
-                if (this.isValidLineStart()) {
+                if (this.isValidLineStart(c)) {
                     return
                 }
 
@@ -167,11 +141,11 @@ export class Lexer {
     }
 
     private skipForward = () => {
-        if (!this.isValidLineStart()) {
+        const c = this.buf[this.pos]
+        if (!this.isValidLineStart(c)) {
             return this.advancePos()
         }
 
-        const c = this.buf[this.pos]
         // NOTE: comments are skipped here 
         // if we want to pass them to be handled, we should remove this
         if (c === '#') {
@@ -182,9 +156,22 @@ export class Lexer {
     }
 
     private processHash(): Token {
-        const tag = this.buf.slice(this.pos, this.pos + 4)
+        const pos = this.pos
+        const tag = this.buf.slice(pos, this.pos + 4)
         if (tag === '#EXT') {
-            return this.processTag()
+            const name = this.processTagName()
+            if (this.buf[this.pos] === ':') {
+                return this.processTagValue(name, pos)
+            }
+
+            const endpos = this.peekNextLinePOS()
+            this.pos += (endpos - this.pos)
+
+            return {
+                name,
+                pos,
+                type: "Tag"
+            }
         }
     }
 
@@ -200,83 +187,69 @@ export class Lexer {
         return pos
     }
 
-    private processTag(): Token {
-        // console.log('ProcessTag: ', this.buf.slice(this.pos))
-        const pos = this.pos
-        const name = this.processTagName()
-
-        if (this.buf[this.pos] === ':') {
-            return this.processTagValue(name, pos)
-        }
-
-        const endpos = this.peekNextLinePOS()
-        this.pos += (endpos - this.pos)
-
-        return {
-            name,
-            pos,
-            type: "Tag"
-        }
-    }
-
     private processTagValue(name: string, startPos: number): TagWithAttributes {
         // skip ':'
         this.pos++
-        debugger
 
         switch (name) {
-        case '#EXTINF':
-            const duration = this.processNumber()
-            return {
-                name,
-                pos: startPos,
-                type: 'TagAttributeList',
-                attributes: [
-                    { name: 'duration', value: duration },
-                ]
-            }
         case '#EXT-X-STREAM-INF':
             const attributes = this.processAttrList()
             this.advancePos()
             const uri = this.processURI()
-            attributes.push({
-                name: 'URI',
-                value: uri,
-            })
-            while (this.isNewline()) {
+            attributes["URI"] = uri
+            while (this.isNewline(this.buf[this.pos])) {
                 this.pos++
             }
             return {
                 name,
                 pos: startPos,
-                type: 'TagAttributeList',
+                type: 'TagWithAttributeList',
                 attributes, 
+            }
+        case '#EXTINF':
+            const duration = this.processNumber()
+            if (this.buf[this.pos] === ',') {
+                this.pos++
+            }
+            return {
+                name,
+                pos: startPos,
+                type: 'TagWithAttributeList',
+                attributes: {
+                    duration
+                }
             }
         default:
             console.log(`missing tag ${name}`)
         }
     }
 
-    private processAttrList(): AttributeList {
-        // console.log(`processAttrList: ${this.buf.slice(this.pos)}`);
-        
-        let attributes = []
-        while (!this.isNewline()) {
-            attributes.push(this.processAttributePair())
+    private processAttrList(): Record<string, string> {        
+        const attributes = {}
+        for (; this.pos < this.buflen; this.pos++) {
+            const pair = this.processAttributePair()
+            attributes[pair[0]] = pair[1];
+            
+            let c = this.buf[this.pos]
             // skip ','
-            if (this.buf[this.pos] === ',') {
-                this.pos++
+            if (c === ',') {
+                continue
+            } 
+            
+            if (this.isNewline(c)) {
+                break;
             }
         }
-        return attributes
+
+        return attributes;
     }
 
-    private processAttributePair(): Attribute {
+    private processAttributePair(): AttributeTuple {
         let pos = this.pos
-        while ((this.isUpperAlpha() || this.buf[this.pos] === '-') && 
-                this.buf[this.pos] !== '='
-            ) {
+        let c = this.buf[this.pos]
+        while ((this.isUpperAlpha(c) || c === '-') && c !== '=') {
             this.pos++
+            c = this.buf[this.pos]
         }
         const name = this.buf.slice(pos, this.pos)
         this.pos++ // skip '='
@@ -284,42 +257,41 @@ export class Lexer {
         pos = this.pos
         // console.log(`processAttributePair - name: ${name}`);
         
+        let value;
+        c = this.buf[this.pos];
         // quoted-string handling
-        if (this.buf[this.pos] === '"') {
+        if (c === '"') {
             this.pos++
             while (this.buf[this.pos] !== '"') {
                 this.pos++
             }
-            this.pos++
+            value = this.buf.slice(pos + 1, this.pos); // skip quote
+            this.pos++ // skip quote
         } else {
-            while (this.buf[this.pos] !== ',' && !this.isWhitespace()) {
+            while (c !== ',' && !this.isWhitespace(c)) {
                 this.pos++
+                c = this.buf[this.pos]
             }
+            value = this.buf.slice(pos, this.pos);
         }
         
-        const value = this.buf.slice(pos, this.pos);
-        
-        // console.log(`processAttributePair - value: ${value}`);
-        
-        return {
-            name,
-            value
-        }
+        return [ name, value ]
     }
 
     private processNumber(): string {
         const pos = this.pos
-        while (this.isDigit() || this.buf[this.pos] === '.') {
+        let c = this.buf[this.pos]
+        while (this.isDigit(c) || c === '.') {
             this.pos++
+            c = this.buf[this.pos]
         }
         return this.buf.slice(pos, this.pos)
     }
 
     private processURI(): string {
-        const pos = this.pos;
-        while (this.isUriChar() && this.pos <= this.buflen) {
-            this.pos++
-        }
+        const pos = this.pos
+        this.pos = this.buf.indexOf('\n', pos)
+        if (this.pos === -1) this.pos = this.buflen;
         return this.buf.slice(pos, this.pos)
     }
 

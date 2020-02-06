@@ -6,10 +6,8 @@ describe('test', () => {
     const lexer = new Lexer()
     it('bbb master', () => {
         lexer.input(bbbMaster)
-        let token = lexer.token();
-        console.log(token);
-        while (token) {
-            token = lexer.token()
+        let token;
+        while ((token = lexer.token()) !== null) {
             console.log(token);
         }
     })
